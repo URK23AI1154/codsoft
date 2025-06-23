@@ -1,0 +1,125 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pickle
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from sklearn.model_selection import train_test_split
+
+
+def load_data(filepath='Titanic-Dataset.csv'):
+    return pd.read_csv(filepath)
+
+
+def get_summary(df):
+    return {
+        "shape": df.shape,
+        "data_types": df.dtypes,
+        "missing_values": df.isnull().sum(),
+        "unique_counts": df.nunique(),
+        "summary_stats": df.describe()
+    }
+
+
+def preprocess_data(df):
+    df = df.copy()
+    df['Age'].fillna(df['Age'].median(), inplace=True)
+    df['Embarked'].fillna(df['Embarked'].mode()[0], inplace=True)
+    df.drop(['PassengerId', 'Name', 'Ticket', 'Cabin'], axis=1, inplace=True)
+    df['Sex'] = df['Sex'].map({'male': 0, 'female': 1})
+    df = pd.get_dummies(df, columns=['Embarked'], drop_first=True)
+
+    X = df.drop('Survived', axis=1)
+    y = df['Survived']
+
+    scaler = MinMaxScaler()
+    cols_to_scale = ['Pclass', 'Age', 'SibSp', 'Parch', 'Fare']
+    X[cols_to_scale] = scaler.fit_transform(X[cols_to_scale])
+
+    return X, y, scaler
+
+
+def train_and_save_model(X_train, y_train, filename="model.pkl"):
+    model = LogisticRegression()
+    model.fit(X_train, y_train)
+    with open(filename, "wb") as f:
+        pickle.dump(model, f)
+    return model
+
+
+def evaluate_model(model, X_test, y_test):
+    predictions = model.predict(X_test)
+    acc = accuracy_score(y_test, predictions)
+    cm = confusion_matrix(y_test, predictions)
+    report = classification_report(y_test, predictions)
+    return acc, cm, report
+
+
+def plot_bar_counts(df, column, title, labels=None):
+    df[column].value_counts().plot(kind='bar', color='skyblue', edgecolor='black')
+    if labels:
+        plt.xticks(ticks=range(len(labels)), labels=labels)
+    plt.title(title)
+    plt.ylabel("Count")
+    plt.show()
+
+def plot_histogram(df, column, bins, title):
+    df[column].hist(bins=bins, edgecolor='black')
+    plt.title(title)
+    plt.xlabel(column)
+    plt.ylabel("Count")
+    plt.show()
+
+def plot_crosstab_bar(df, col1, col2, title):
+    pd.crosstab(df[col1], df[col2]).plot(kind='bar')
+    plt.title(title)
+    plt.ylabel("Count")
+    plt.show()
+
+def plot_boxplot(df, column, by_column, title):
+    df.boxplot(column=column, by=by_column)
+    plt.title(title)
+    plt.suptitle("")  # remove default subtitle
+    plt.show()
+
+def plot_correlation_heatmap(df, title="Correlation Heatmap"):
+    df_corr = df.copy()
+    df_corr['Sex'] = df_corr['Sex'].map({'male': 0, 'female': 1})
+    df_corr['Embarked'] = df_corr['Embarked'].map({'S': 0, 'C': 1, 'Q': 2})
+    df_corr.drop(['PassengerId', 'Name', 'Ticket', 'Cabin'], axis=1, inplace=True)
+    plt.figure(figsize=(10,6))
+    sns.heatmap(df_corr.corr(), annot=True, cmap='coolwarm', fmt=".2f")
+    plt.title(title)
+    plt.show()
+
+
+def main():
+    df = load_data()
+    summary = get_summary(df)
+
+    X, y, scaler = preprocess_data(df)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    model = train_and_save_model(X_train, y_train)
+    acc, cm, report = evaluate_model(model, X_test, y_test)
+
+    print("Model Evaluation Results:")
+    print("Accuracy:", acc)
+    print("\nConfusion Matrix:\n", cm)
+    print("\nClassification Report:\n", report)
+
+    # Visualizations
+    plot_bar_counts(df, 'Survived', "Survival Count", labels=['Did Not Survive', 'Survived'])
+    plot_histogram(df, 'Age', bins=30, title="Age Distribution")
+    plot_histogram(df, 'Fare', bins=40, title="Fare Distribution")
+    plot_crosstab_bar(df, 'Sex', 'Survived', "Survival by Sex")
+    plot_crosstab_bar(df, 'Pclass', 'Survived', "Survival by Passenger Class")
+    plot_boxplot(df, 'Age', 'Pclass', "Age Distribution by Passenger Class")
+    plot_correlation_heatmap(df)
+    plot_crosstab_bar(df, 'Embarked', 'Survived', "Survival by Port of Embarkation")
+
+
+if __name__ == "__main__":
+    main()
