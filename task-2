@@ -1,0 +1,142 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import joblib
+
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+
+import warnings
+warnings.filterwarnings('ignore')
+
+
+
+def load_data():
+    df = pd.read_csv('IRIS.csv')
+    print("Data Loaded Successfully.")
+    return df
+
+
+
+def visualize_data(df):
+    plt.figure(figsize=(6, 6))
+    colors = sns.color_palette('Set2')
+    plt.pie(df['species'].value_counts(), labels=df['species'].unique(),
+            autopct='%1.1f%%', colors=colors, startangle=90)
+    plt.title("Species Distribution")
+    plt.show()
+
+    for feature in df.columns[:-1]:
+        plt.figure()
+        sns.barplot(x='species', y=feature, data=df, palette='coolwarm')
+        plt.title(f'Mean {feature.capitalize()} by Species')
+        plt.show()
+
+
+
+def preprocess_data(df):
+    le = LabelEncoder()
+    df['species'] = le.fit_transform(df['species'])
+    X = df.drop(columns='species')
+    y = df['species']
+    return X, y, le
+
+
+
+def train_models(X, y):
+    model_params = {
+        'LogisticRegression': {
+            'model': LogisticRegression(),
+            'params': {
+                'C': [0.01, 0.1, 1],
+                'solver': ['saga'],
+                'max_iter': [100, 200],
+                'multi_class': ['multinomial'],
+                'penalty': ['l1', 'l2']
+            }
+        },
+        'RandomForest': {
+            'model': RandomForestClassifier(),
+            'params': {
+                'n_estimators': [50, 100],
+                'max_depth': [None, 10],
+                'min_samples_split': [2, 5]
+            }
+        },
+        'SVC': {
+            'model': SVC(probability=True),
+            'params': {
+                'C': [0.1, 1, 10],
+                'kernel': ['linear', 'rbf']
+            }
+        },
+        'KNeighbors': {
+            'model': KNeighborsClassifier(),
+            'params': {
+                'n_neighbors': [3, 5, 7]
+            }
+        }
+    }
+
+    scores = []
+    best_models = {}
+
+    for name, mp in model_params.items():
+        clf = GridSearchCV(mp['model'], mp['params'], cv=5, return_train_score=True)
+        clf.fit(X, y)
+        scores.append({
+            'model': name,
+            'train_score': clf.cv_results_['mean_train_score'][clf.best_index_],
+            'cv_score': clf.best_score_,
+            'best_params': clf.best_params_
+        })
+        best_models[name] = clf.best_estimator_
+
+    result_df = pd.DataFrame(scores)
+    print("\nGrid Search Results:\n", result_df)
+
+    
+    best_overall = result_df.sort_values(by='cv_score', ascending=False).iloc[0]['model']
+    joblib.dump(best_models[best_overall], 'best_iris_model.joblib')
+    print(f"\nBest model saved: {best_overall}")
+
+    return best_models[best_overall]
+
+
+def evaluate_model(model, X_test, y_test):
+    y_pred = model.predict(X_test)
+    print("\nClassification Report:\n", classification_report(y_test, y_pred))
+    print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+    print("Accuracy:", accuracy_score(y_test, y_pred))
+
+
+
+def plot_feature_importance(model, feature_names):
+    if hasattr(model, 'feature_importances_'):
+        importances = model.feature_importances_
+        sns.barplot(x=importances, y=feature_names)
+        plt.title("Feature Importances")
+        plt.show()
+
+
+
+def main():
+    df = load_data()
+    visualize_data(df)
+
+    X, y, encoder = preprocess_data(df)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+
+    best_model = train_models(X_train, y_train)
+    evaluate_model(best_model, X_test, y_test)
+    plot_feature_importance(best_model, X.columns.tolist())
+
+
+if __name__ == '__main__':
+    main()
